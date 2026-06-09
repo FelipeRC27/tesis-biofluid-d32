@@ -54,17 +54,61 @@
 
     <mat-form-field appearance="outline">
       <mat-label>Departamento</mat-label>
-      <input matInput formControlName="departamento" />
+      <mat-select formControlName="departamento" placeholder="Seleccione departamento">
+        @for (item of departamentos(); track item) {
+          <mat-option [value]="item">{{ item }}</mat-option>
+        }
+      </mat-select>
+      @if (isLoadingDepartamentos()) {
+        <mat-progress-spinner matSuffix mode="indeterminate" diameter="18"></mat-progress-spinner>
+      }
+      @if (form.controls.departamento.hasError('required')) {
+        <mat-error>Selecciona un departamento.</mat-error>
+      }
     </mat-form-field>
 
     <mat-form-field appearance="outline">
       <mat-label>Provincia</mat-label>
-      <input matInput formControlName="provincia" />
+      <mat-select formControlName="provincia" placeholder="Seleccione provincia">
+        @for (item of provincias(); track item) {
+          <mat-option [value]="item">{{ item }}</mat-option>
+        }
+      </mat-select>
+      @if (isLoadingProvincias()) {
+        <mat-progress-spinner matSuffix mode="indeterminate" diameter="18"></mat-progress-spinner>
+      }
+      @if (form.controls.provincia.hasError('required')) {
+        <mat-error>Selecciona una provincia.</mat-error>
+      }
     </mat-form-field>
 
     <mat-form-field appearance="outline">
       <mat-label>Distrito</mat-label>
-      <input matInput formControlName="distrito" />
+      <mat-select formControlName="distrito" placeholder="Seleccione distrito">
+        @for (item of distritos(); track item) {
+          <mat-option [value]="item">{{ item }}</mat-option>
+        }
+      </mat-select>
+      @if (isLoadingDistritos()) {
+        <mat-progress-spinner matSuffix mode="indeterminate" diameter="18"></mat-progress-spinner>
+      }
+      @if (form.controls.distrito.hasError('required')) {
+        <mat-error>Selecciona un distrito.</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Ubigeo</mat-label>
+      <input matInput formControlName="ubigeo" readonly placeholder="Se generara automaticamente" />
+      @if (isConsultandoUbigeo()) {
+        <mat-progress-spinner matSuffix mode="indeterminate" diameter="18"></mat-progress-spinner>
+      }
+      @if (form.controls.ubigeo.hasError('required')) {
+        <mat-error>El ubigeo es obligatorio.</mat-error>
+      }
+      @if (form.controls.ubigeo.hasError('pattern')) {
+        <mat-error>El ubigeo debe tener 6 digitos.</mat-error>
+      }
     </mat-form-field>
 
     <mat-form-field appearance="outline">
@@ -84,6 +128,12 @@
     }
     @if (rucAptoMensaje) {
       <p class="full feedback feedback-warn">{{ rucAptoMensaje }}</p>
+    }
+    @if (ubicacionInfoMessage) {
+      <p class="full feedback feedback-info">{{ ubicacionInfoMessage }}</p>
+    }
+    @if (ubicacionErrorMessage) {
+      <p class="full feedback feedback-error">{{ ubicacionErrorMessage }}</p>
     }
 
     @if (isCreateMode) {

@@ -23,6 +23,15 @@ export interface UsuarioResponse {
   fechaActualiza?: string;
 }
 
+export interface VendedorResponse {
+  idUsuario: number;
+  nombres: string;
+  apellidoPaterno: string;
+  apellidoMaterno?: string;
+  nombreCompleto: string;
+  correo: string;
+}
+
 export interface UsuarioRequest {
   idPerfil: number;
   idTipoDoc: number;

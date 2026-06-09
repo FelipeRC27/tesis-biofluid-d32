@@ -71,22 +71,94 @@
           <span>Al guardar, el stock disponible será reservado automáticamente.</span>
         </div>
 
-        <mat-checkbox formControlName="flagCubierto">Despacho cubierto</mat-checkbox>
-
-        <mat-form-field appearance="outline" class="wide">
-          <mat-label>Dirección despacho</mat-label>
-          <input matInput formControlName="direccionDespacho" />
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" class="wide">
-          <mat-label>Departamento / Provincia / Distrito</mat-label>
-          <input matInput formControlName="depProvDis" />
-        </mat-form-field>
-
         <mat-form-field appearance="outline" class="wide">
           <mat-label>Observaciones</mat-label>
           <textarea matInput rows="3" formControlName="observaciones"></textarea>
         </mat-form-field>
+      </div>
+    </section>
+
+    <section class="panel form-section">
+      <h2>Datos de despacho</h2>
+      <div class="form-grid">
+        <mat-form-field appearance="outline" class="wide">
+          <mat-label>Dirección despacho</mat-label>
+          <input matInput formControlName="direccionDespacho" />
+          <mat-error>La dirección de despacho es obligatoria.</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Departamento</mat-label>
+          <mat-select formControlName="departamento" placeholder="Seleccione departamento">
+            @for (departamento of departamentos(); track departamento) {
+              <mat-option [value]="departamento">{{ departamento }}</mat-option>
+            }
+          </mat-select>
+          @if (isLoadingDepartamentos()) {
+            <mat-spinner matSuffix diameter="18" />
+          }
+          <mat-error>Selecciona un departamento.</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Provincia</mat-label>
+          <mat-select formControlName="provincia" placeholder="Seleccione provincia">
+            @for (provincia of provincias(); track provincia) {
+              <mat-option [value]="provincia">{{ provincia }}</mat-option>
+            }
+          </mat-select>
+          @if (isLoadingProvincias()) {
+            <mat-spinner matSuffix diameter="18" />
+          }
+          <mat-error>Selecciona una provincia.</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Distrito</mat-label>
+          <mat-select formControlName="distrito" placeholder="Seleccione distrito">
+            @for (distrito of distritos(); track distrito) {
+              <mat-option [value]="distrito">{{ distrito }}</mat-option>
+            }
+          </mat-select>
+          @if (isLoadingDistritos()) {
+            <mat-spinner matSuffix diameter="18" />
+          }
+          <mat-error>Selecciona un distrito.</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Ubigeo</mat-label>
+          <input matInput formControlName="ubigeo" readonly placeholder="Se generara automaticamente" />
+          @if (isConsultandoUbigeo()) {
+            <mat-spinner matSuffix diameter="18" />
+          }
+          <mat-error>El ubigeo debe tener 6 digitos.</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="dep-prov-dis">
+          <mat-label>Departamento / Provincia / Distrito</mat-label>
+          <input matInput formControlName="depProvDis" readonly />
+        </mat-form-field>
+
+        <div class="coverage-box">
+          <mat-checkbox formControlName="flagCubierto">Despacho cubierto</mat-checkbox>
+          @if (isConsultandoCobertura()) {
+            <mat-spinner diameter="18" />
+          }
+        </div>
+
+        @if (mensajeCobertura()) {
+          <p
+            class="wide coverage-message"
+            [class.coverage-message--ok]="tieneCobertura() === true"
+            [class.coverage-message--warn]="tieneCobertura() === false"
+          >
+            {{ mensajeCobertura() }}
+          </p>
+        }
+        @if (ubicacionErrorMessage()) {
+          <p class="wide coverage-message coverage-message--error">{{ ubicacionErrorMessage() }}</p>
+        }
       </div>
     </section>
 

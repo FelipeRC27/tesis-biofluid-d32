@@ -43,6 +43,35 @@ h2 {
   grid-column: span 3;
 }
 
+.dep-prov-dis {
+  grid-column: span 2;
+}
+
+.coverage-box {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.coverage-message {
+  margin: -0.25rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.coverage-message--ok {
+  color: var(--bio-primary);
+}
+
+.coverage-message--warn {
+  color: var(--bf-danger);
+}
+
+.coverage-message--error {
+  color: #ba1a1a;
+}
+
 .info-note {
   min-height: 56px;
   border: 1px solid var(--bio-outline-variant);
@@ -145,6 +174,10 @@ h2 {
   }
 
   .wide {
+    grid-column: span 1;
+  }
+
+  .dep-prov-dis {
     grid-column: span 1;
   }
 }

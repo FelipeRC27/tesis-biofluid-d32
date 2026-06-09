@@ -12,10 +12,15 @@ import com.example.demo.dto.CotizacionV1Response;
 import com.example.demo.security.AuthenticatedUser;
 import com.example.demo.service.CotizacionPdfService;
 import com.example.demo.service.CotizacionV1Service;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.core.io.Resource;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -97,7 +102,16 @@ public class CotizacionV1Controller {
         return pdfService.generarPdfCotizacion(id, resolveActor(user));
     }
 
-    @GetMapping("/{id}/pdf")
+    @GetMapping(value = "/{id}/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    @Operation(summary = "Descargar PDF de cotizacion")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Archivo PDF de la cotizacion",
+            content = @Content(
+                    mediaType = MediaType.APPLICATION_PDF_VALUE,
+                    schema = @Schema(type = "string", format = "binary")
+            )
+    )
     public ResponseEntity<Resource> descargarPdf(@PathVariable Integer id) {
         return pdfService.descargarPdfCotizacion(id);
     }

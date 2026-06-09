@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { catchError, forkJoin, of } from 'rxjs';
-import { UsuarioResponse } from '../../core/auth/models/auth.models';
+import { VendedorResponse } from '../../core/auth/models/auth.models';
 import { CatalogoItem } from '../../core/models/v1.models';
 import { CatalogoV1Service } from '../../core/services/catalogo-v1.service';
 import { DomainApiService } from '../../core/services/domain-api.service';
@@ -43,7 +43,7 @@ interface DashboardCatalogos {
   tiposCliente: CatalogoItem[];
   clientes: ClienteResponse[];
   productos: ProductoResponse[];
-  vendedores: UsuarioResponse[];
+  vendedores: VendedorResponse[];
 }
 
 const EMPTY_RESUMEN: DashboardResumenResponse = {
@@ -197,8 +197,8 @@ export class DashboardComponent {
     return this.maxOf(items, (item) => item.stockDisponible);
   }
 
-  nombreUsuario(usuario: UsuarioResponse): string {
-    return [usuario.nombres, usuario.apellidoPaterno, usuario.apellidoMaterno].filter(Boolean).join(' ');
+  nombreUsuario(usuario: VendedorResponse): string {
+    return usuario.nombreCompleto || [usuario.nombres, usuario.apellidoPaterno, usuario.apellidoMaterno].filter(Boolean).join(' ');
   }
 
   faltante(producto: ProductoStockBajoResponse): number {
@@ -216,7 +216,7 @@ export class DashboardComponent {
       clientes: this.domainApi.getClientes().pipe(catchError(() => of([]))),
       productos: this.domainApi.getProductos().pipe(catchError(() => of([]))),
       vendedores: this.permissions.canViewAllSellers()
-        ? this.domainApi.getUsuarios().pipe(catchError(() => of([])))
+        ? this.domainApi.getVendedores().pipe(catchError(() => of([])))
         : of([]),
     }).subscribe({
       next: (catalogos) => this.catalogos.set(catalogos),

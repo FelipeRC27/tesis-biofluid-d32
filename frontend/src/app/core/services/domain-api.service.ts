@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { Observable, forkJoin, map } from 'rxjs';
 import { API_ENDPOINTS } from '../constants/api-endpoints';
-import { UsuarioRequest, UsuarioResponse } from '../auth/models/auth.models';
+import { UsuarioRequest, UsuarioResponse, VendedorResponse } from '../auth/models/auth.models';
 import { ReferenceResponse } from '../http/reference-response.model';
 import { ApiService, QueryParams } from './api.service';
 import {
@@ -30,6 +30,10 @@ export class DomainApiService {
 
   getUsuarios(): Observable<UsuarioResponse[]> {
     return this.api.get<UsuarioResponse[]>(API_ENDPOINTS.usuarios);
+  }
+
+  getVendedores(): Observable<VendedorResponse[]> {
+    return this.api.get<VendedorResponse[]>(API_ENDPOINTS.usuariosVendedores);
   }
 
   createUsuario(request: UsuarioRequest): Observable<UsuarioResponse> {

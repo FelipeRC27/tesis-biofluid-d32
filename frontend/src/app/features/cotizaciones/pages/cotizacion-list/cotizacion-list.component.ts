@@ -8,7 +8,7 @@ import { MatPaginator } from '@angular/material/paginator';
 import { MatSort } from '@angular/material/sort';
 import { MatTableDataSource } from '@angular/material/table';
 import { debounceTime, distinctUntilChanged, filter, finalize, forkJoin, of } from 'rxjs';
-import { UsuarioResponse } from '../../../../core/auth/models/auth.models';
+import { VendedorResponse } from '../../../../core/auth/models/auth.models';
 import { PermissionService } from '../../../../core/auth/services/permission.service';
 import { CatalogoItem, ClienteV1 } from '../../../../core/models/v1.models';
 import { CatalogoV1Service } from '../../../../core/services/catalogo-v1.service';
@@ -52,7 +52,7 @@ export class CotizacionListComponent implements OnInit {
   readonly cotizaciones = signal<CotizacionResponse[]>([]);
   readonly filteredCotizaciones = signal<CotizacionResponse[]>([]);
   readonly clientes = signal<ClienteV1[]>([]);
-  readonly vendedores = signal<UsuarioResponse[]>([]);
+  readonly vendedores = signal<VendedorResponse[]>([]);
   readonly estados = signal<CatalogoItem[]>([]);
   readonly isLoading = signal(false);
   readonly pdfLoadingId = signal<number | null>(null);
@@ -104,7 +104,7 @@ export class CotizacionListComponent implements OnInit {
   loadCatalogs(): void {
     forkJoin({
       clientes: this.clienteService.findAll(),
-      vendedores: this.permissions.canViewAllSellers() ? this.domainApi.getUsuarios() : of([]),
+      vendedores: this.permissions.canViewAllSellers() ? this.domainApi.getVendedores() : of([]),
       estados: this.catalogoService.estadosCotizacion(),
     }).subscribe({
       next: ({ clientes, vendedores, estados }) => {
@@ -212,8 +212,8 @@ export class CotizacionListComponent implements OnInit {
     return `${item.ruc} - ${item.razonSocial}`;
   }
 
-  userLabel(user: UsuarioResponse): string {
-    return [user.nombres, user.apellidoPaterno, user.apellidoMaterno].filter(Boolean).join(' ');
+  userLabel(user: VendedorResponse): string {
+    return user.nombreCompleto || [user.nombres, user.apellidoPaterno, user.apellidoMaterno].filter(Boolean).join(' ');
   }
 
   quoteNumber(item: CotizacionResponse): string {

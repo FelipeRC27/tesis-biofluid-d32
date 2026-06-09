@@ -82,8 +82,15 @@ public class AccessControlService {
     }
 
     public Integer vendedorPermitido(Integer idVendedorSolicitado) {
+        return resolverFiltroVendedor(idVendedorSolicitado);
+    }
+
+    public Integer resolverFiltroVendedor(Integer idVendedorSolicitado) {
         if (esVendedor()) {
             return obtenerIdUsuarioAutenticado();
+        }
+        if (puedeVerTodosLosVendedores() && (idVendedorSolicitado == null || idVendedorSolicitado == 0)) {
+            return null;
         }
         return idVendedorSolicitado;
     }

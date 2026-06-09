@@ -71,6 +71,14 @@ export class PermissionService {
     return this.isFullAccess() || this.isSalesManager();
   }
 
+  canViewSellerFilter(): boolean {
+    return this.canViewAllSellers();
+  }
+
+  shouldForceCurrentSeller(): boolean {
+    return this.isSeller();
+  }
+
   canViewAllQuotations(): boolean {
     return this.canViewAllSellers();
   }

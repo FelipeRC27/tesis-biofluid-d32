@@ -2,6 +2,7 @@ package com.example.demo.controller;
 
 import com.example.demo.dto.UsuarioRequest;
 import com.example.demo.dto.UsuarioResponse;
+import com.example.demo.dto.VendedorResponse;
 import com.example.demo.security.AuthenticatedUser;
 import com.example.demo.service.UsuarioService;
 import jakarta.validation.Valid;
@@ -29,6 +30,11 @@ public class UsuarioController {
     @GetMapping
     public List<UsuarioResponse> findAll() {
         return service.findAllDto();
+    }
+
+    @GetMapping("/vendedores")
+    public List<VendedorResponse> findVendedores() {
+        return service.findVendedoresHabilitados();
     }
 
     @GetMapping("/{id}")

@@ -2,8 +2,21 @@ import { Component, OnDestroy, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Subject, catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, of, switchMap, takeUntil, tap } from 'rxjs';
-import { UsuarioResponse } from '../../../../core/auth/models/auth.models';
+import {
+  Subject,
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  firstValueFrom,
+  forkJoin,
+  of,
+  switchMap,
+  takeUntil,
+  tap,
+} from 'rxjs';
+import { VendedorResponse } from '../../../../core/auth/models/auth.models';
 import { AuthService } from '../../../../core/auth/services/auth.service';
 import { PermissionService } from '../../../../core/auth/services/permission.service';
 import { ClienteCreateRequest, ClienteResponseVm, ClienteUpdateRequest } from '../../../../core/models/cliente.models';
@@ -12,6 +25,7 @@ import { CatalogoItem } from '../../../../core/models/v1.models';
 import { CatalogoV1Service } from '../../../../core/services/catalogo-v1.service';
 import { DocumentoService } from '../../../../core/services/documento.service';
 import { DomainApiService } from '../../../../core/services/domain-api.service';
+import { UbigeoIneiService } from '../../../../core/services/ubigeo-inei.service';
 import { MaterialModule } from '../../../../shared/material/material.module';
 
 interface ClienteFormDialogData {
@@ -34,22 +48,32 @@ export class ClienteFormDialogComponent implements OnDestroy {
   private readonly domainApi = inject(DomainApiService);
   private readonly auth = inject(AuthService);
   private readonly permissions = inject(PermissionService);
+  private readonly ubigeos = inject(UbigeoIneiService);
   private readonly destroy$ = new Subject<void>();
   private lastQueriedRuc = '';
-  private readonly vendedorPerfilId = 4;
-  private readonly usuarioHabilitadoEstadoId = 1;
+  private isSyncingUbigeo = false;
 
   readonly tiposCliente = signal<CatalogoItem[]>([]);
   readonly estadosClienteContacto = signal<CatalogoItem[]>([]);
-  readonly vendedores = signal<UsuarioResponse[]>([]);
+  readonly vendedores = signal<VendedorResponse[]>([]);
+  readonly departamentos = signal<string[]>([]);
+  readonly provincias = signal<string[]>([]);
+  readonly distritos = signal<string[]>([]);
   readonly isLoadingCatalogos = signal(false);
+  readonly isLoadingDepartamentos = signal(false);
+  readonly isLoadingProvincias = signal(false);
+  readonly isLoadingDistritos = signal(false);
+  readonly isConsultandoUbigeo = signal(false);
   readonly catalogoError = signal<string | null>(null);
   readonly vendedoresError = signal<string | null>(null);
   readonly estadoActivoError = signal<string | null>(null);
+
   isConsultandoRuc = false;
   rucInfoMessage: string | null = null;
   rucErrorMessage: string | null = null;
   rucAptoMensaje: string | null = null;
+  ubicacionInfoMessage: string | null = null;
+  ubicacionErrorMessage: string | null = null;
 
   readonly form = this.fb.nonNullable.group({
     ruc: ['', [Validators.required, Validators.pattern(/^\d{11}$/)]],
@@ -57,17 +81,21 @@ export class ClienteFormDialogComponent implements OnDestroy {
     idTipoCliente: [0, [Validators.required, Validators.min(1)]],
     idVendedorAsignado: [0, [Validators.required, Validators.min(1)]],
     direccionFiscal: [''],
-    departamento: [''],
-    provincia: [''],
-    distrito: [''],
+    departamento: ['', [Validators.required]],
+    provincia: ['', [Validators.required]],
+    distrito: ['', [Validators.required]],
     condicionSunat: ['', [Validators.required]],
     estadoSunat: ['', [Validators.required]],
-    ubigeo: ['', [Validators.maxLength(6)]],
+    ubigeo: ['', [Validators.required, Validators.pattern(/^\d{6}$/)]],
     idEstadoClienteContacto: [0, [Validators.required, Validators.min(1)]],
   });
 
   constructor() {
+    this.form.controls.provincia.disable({ emitEvent: false });
+    this.form.controls.distrito.disable({ emitEvent: false });
+    this.bindUbigeoCascade();
     this.loadCatalogos();
+
     if (this.permissions.isSeller()) {
       const idUsuario = this.permissions.currentUserId();
       if (idUsuario) {
@@ -77,20 +105,15 @@ export class ClienteFormDialogComponent implements OnDestroy {
     }
 
     if (this.data.cliente) {
-      this.form.patchValue({
-        ruc: this.data.cliente.ruc,
-        razonSocial: this.data.cliente.razonSocial,
-        idTipoCliente: this.data.cliente.idTipoCliente ?? 0,
-        idVendedorAsignado: this.data.cliente.idVendedorAsignado ?? 0,
-        direccionFiscal: this.data.cliente.direccionFiscal ?? '',
-        departamento: this.data.cliente.departamento ?? '',
-        provincia: this.data.cliente.provincia ?? '',
-        distrito: this.data.cliente.distrito ?? '',
-        condicionSunat: this.data.cliente.condicionSunat ?? 'HABIDO',
-        estadoSunat: this.data.cliente.estadoSunat ?? 'ACTIVO',
-        ubigeo: this.data.cliente.ubigeo ?? '',
-        idEstadoClienteContacto: this.data.cliente.estado?.id ?? 0,
+      this.patchClienteValues(this.data.cliente);
+      void this.syncUbigeoSelection({
+        departamento: this.data.cliente.departamento,
+        provincia: this.data.cliente.provincia,
+        distrito: this.data.cliente.distrito,
+        ubigeo: this.data.cliente.ubigeo,
       });
+    } else {
+      void this.loadDepartamentosAsync();
     }
 
     this.bindRucAutoLookup();
@@ -113,6 +136,81 @@ export class ClienteFormDialogComponent implements OnDestroy {
       return false;
     }
     return !this.catalogoError() && !this.vendedoresError() && !this.estadoActivoError();
+  }
+
+  private bindUbigeoCascade(): void {
+    this.form.controls.departamento.valueChanges
+      .pipe(distinctUntilChanged(), takeUntil(this.destroy$))
+      .subscribe((departamento) => {
+        if (this.isSyncingUbigeo) {
+          return;
+        }
+        void this.onDepartamentoChange(departamento);
+      });
+
+    this.form.controls.provincia.valueChanges
+      .pipe(distinctUntilChanged(), takeUntil(this.destroy$))
+      .subscribe((provincia) => {
+        if (this.isSyncingUbigeo) {
+          return;
+        }
+        void this.onProvinciaChange(provincia);
+      });
+
+    this.form.controls.distrito.valueChanges
+      .pipe(distinctUntilChanged(), takeUntil(this.destroy$))
+      .subscribe((distrito) => {
+        if (this.isSyncingUbigeo) {
+          return;
+        }
+        void this.onDistritoChange(distrito);
+      });
+  }
+
+  private async onDepartamentoChange(rawDepartamento: string): Promise<void> {
+    const departamento = this.normalizeLocationText(rawDepartamento);
+    this.clearUbigeoMessages();
+    this.provincias.set([]);
+    this.distritos.set([]);
+    this.form.patchValue({ departamento, provincia: '', distrito: '', ubigeo: '' }, { emitEvent: false });
+    this.form.controls.provincia.disable({ emitEvent: false });
+    this.form.controls.distrito.disable({ emitEvent: false });
+
+    if (!departamento) {
+      return;
+    }
+
+    await this.loadProvinciasAsync(departamento);
+    this.form.controls.provincia.enable({ emitEvent: false });
+  }
+
+  private async onProvinciaChange(rawProvincia: string): Promise<void> {
+    const departamento = this.form.controls.departamento.value;
+    const provincia = this.normalizeLocationText(rawProvincia);
+    this.clearUbigeoMessages();
+    this.distritos.set([]);
+    this.form.patchValue({ provincia, distrito: '', ubigeo: '' }, { emitEvent: false });
+    this.form.controls.distrito.disable({ emitEvent: false });
+
+    if (!departamento || !provincia) {
+      return;
+    }
+
+    await this.loadDistritosAsync(departamento, provincia);
+    this.form.controls.distrito.enable({ emitEvent: false });
+  }
+
+  private async onDistritoChange(rawDistrito: string): Promise<void> {
+    const departamento = this.form.controls.departamento.value;
+    const provincia = this.form.controls.provincia.value;
+    const distrito = this.normalizeLocationText(rawDistrito);
+    this.form.patchValue({ distrito, ubigeo: '' }, { emitEvent: false });
+
+    if (!departamento || !provincia || !distrito) {
+      return;
+    }
+
+    await this.consultarUbigeoAsync(departamento, provincia, distrito);
   }
 
   private bindRucAutoLookup(): void {
@@ -153,21 +251,24 @@ export class ClienteFormDialogComponent implements OnDestroy {
         if (!response) {
           return;
         }
-        this.applyRucResponse(response);
+        void this.applyRucResponse(response);
       });
   }
 
-  private applyRucResponse(response: RucConsultaResponse): void {
+  private async applyRucResponse(response: RucConsultaResponse): Promise<void> {
     this.form.patchValue({
       ruc: response.ruc ?? this.form.controls.ruc.value,
       razonSocial: response.razonSocial ?? '',
       condicionSunat: response.condicion ?? '',
       estadoSunat: response.estado ?? '',
       direccionFiscal: response.direccion ?? '',
-      departamento: response.departamento ?? '',
-      provincia: response.provincia ?? '',
-      distrito: response.distrito ?? '',
-      ubigeo: response.ubigeo ?? '',
+    });
+
+    await this.syncUbigeoSelection({
+      departamento: response.departamento,
+      provincia: response.provincia,
+      distrito: response.distrito,
+      ubigeo: response.ubigeo,
     });
 
     this.rucInfoMessage = 'Datos del cliente encontrados y completados automaticamente.';
@@ -186,6 +287,183 @@ export class ClienteFormDialogComponent implements OnDestroy {
     }
 
     this.rucAptoMensaje = null;
+  }
+
+  private async syncUbigeoSelection(values: {
+    departamento?: string | null;
+    provincia?: string | null;
+    distrito?: string | null;
+    ubigeo?: string | null;
+  }): Promise<void> {
+    this.isSyncingUbigeo = true;
+    this.clearUbigeoMessages();
+    this.ubicacionInfoMessage = 'Sincronizando departamento, provincia y distrito...';
+
+    try {
+      if (!this.departamentos().length) {
+        await this.loadDepartamentosAsync();
+      }
+
+      const departamento = this.pickCatalogValue(
+        this.departamentos(),
+        values.departamento,
+        (items) => this.departamentos.set(items),
+      );
+
+      this.form.patchValue(
+        {
+          departamento,
+          provincia: '',
+          distrito: '',
+          ubigeo: this.normalizeUbigeoValue(values.ubigeo),
+        },
+        { emitEvent: false },
+      );
+
+      if (!departamento) {
+        this.form.controls.provincia.disable({ emitEvent: false });
+        this.form.controls.distrito.disable({ emitEvent: false });
+        this.ubicacionInfoMessage = null;
+        return;
+      }
+
+      await this.loadProvinciasAsync(departamento);
+      this.form.controls.provincia.enable({ emitEvent: false });
+
+      const provincia = this.pickCatalogValue(this.provincias(), values.provincia, (items) => this.provincias.set(items));
+      this.form.patchValue({ provincia, distrito: '' }, { emitEvent: false });
+
+      if (!provincia) {
+        this.form.controls.distrito.disable({ emitEvent: false });
+        this.ubicacionInfoMessage = null;
+        return;
+      }
+
+      await this.loadDistritosAsync(departamento, provincia);
+      this.form.controls.distrito.enable({ emitEvent: false });
+
+      const distrito = this.pickCatalogValue(this.distritos(), values.distrito, (items) => this.distritos.set(items));
+      this.form.patchValue({ distrito }, { emitEvent: false });
+
+      if (departamento && provincia && distrito) {
+        await this.consultarUbigeoAsync(departamento, provincia, distrito, values.ubigeo ?? '');
+        return;
+      }
+
+      this.ubicacionInfoMessage = null;
+    } finally {
+      this.isSyncingUbigeo = false;
+    }
+  }
+
+  private async loadDepartamentosAsync(): Promise<string[]> {
+    this.isLoadingDepartamentos.set(true);
+    try {
+      const departamentos = await firstValueFrom(this.ubigeos.listarDepartamentos());
+      const normalized = this.normalizeCatalogValues(departamentos);
+      this.departamentos.set(normalized);
+      return normalized;
+    } catch {
+      this.ubicacionErrorMessage = 'No se pudieron cargar los departamentos.';
+      this.departamentos.set([]);
+      return [];
+    } finally {
+      this.isLoadingDepartamentos.set(false);
+    }
+  }
+
+  private async loadProvinciasAsync(departamento: string): Promise<string[]> {
+    this.isLoadingProvincias.set(true);
+    try {
+      const provincias = await firstValueFrom(this.ubigeos.listarProvincias(departamento));
+      const normalized = this.normalizeCatalogValues(provincias);
+      this.provincias.set(normalized);
+      return normalized;
+    } catch {
+      this.ubicacionErrorMessage = 'No se pudieron cargar las provincias del departamento seleccionado.';
+      this.provincias.set([]);
+      return [];
+    } finally {
+      this.isLoadingProvincias.set(false);
+    }
+  }
+
+  private async loadDistritosAsync(departamento: string, provincia: string): Promise<string[]> {
+    this.isLoadingDistritos.set(true);
+    try {
+      const distritos = await firstValueFrom(this.ubigeos.listarDistritos(departamento, provincia));
+      const normalized = this.normalizeCatalogValues(distritos);
+      this.distritos.set(normalized);
+      return normalized;
+    } catch {
+      this.ubicacionErrorMessage = 'No se pudieron cargar los distritos de la provincia seleccionada.';
+      this.distritos.set([]);
+      return [];
+    } finally {
+      this.isLoadingDistritos.set(false);
+    }
+  }
+
+  private async consultarUbigeoAsync(
+    departamento: string,
+    provincia: string,
+    distrito: string,
+    fallbackUbigeo = '',
+  ): Promise<boolean> {
+    const normalizedDepartamento = this.normalizeLocationText(departamento);
+    const normalizedProvincia = this.normalizeLocationText(provincia);
+    const normalizedDistrito = this.normalizeLocationText(distrito);
+    const normalizedFallback = this.normalizeUbigeoValue(fallbackUbigeo);
+
+    if (!normalizedDepartamento || !normalizedProvincia || !normalizedDistrito) {
+      return false;
+    }
+
+    this.isConsultandoUbigeo.set(true);
+    this.ubicacionErrorMessage = null;
+    this.ubicacionInfoMessage = 'Consultando ubigeo...';
+
+    try {
+      const response = await firstValueFrom(
+        this.ubigeos.consultarCodigoUbigeo(normalizedDepartamento, normalizedProvincia, normalizedDistrito),
+      );
+      const departamento = this.ensureCatalogOption(
+        this.departamentos(),
+        response.departamento,
+        (items) => this.departamentos.set(items),
+      );
+      const provincia = this.ensureCatalogOption(this.provincias(), response.provincia, (items) => this.provincias.set(items));
+      const distrito = this.ensureCatalogOption(this.distritos(), response.distrito, (items) => this.distritos.set(items));
+      this.form.patchValue(
+        {
+          departamento,
+          provincia,
+          distrito,
+          ubigeo: response.ubigeo,
+        },
+        { emitEvent: false },
+      );
+      this.ubicacionInfoMessage =
+        normalizedFallback && normalizedFallback !== response.ubigeo
+          ? 'Ubigeo validado con el catalogo interno. Se priorizo el codigo oficial.'
+          : 'Ubigeo obtenido correctamente.';
+      return true;
+    } catch {
+      if (normalizedFallback) {
+        this.form.controls.ubigeo.setValue(normalizedFallback, { emitEvent: false });
+        this.ubicacionErrorMessage =
+          'No se encontro coincidencia exacta en el catalogo de ubigeo. Verifique departamento, provincia y distrito.';
+        this.ubicacionInfoMessage = null;
+        return true;
+      }
+
+      this.form.controls.ubigeo.setValue('', { emitEvent: false });
+      this.ubicacionErrorMessage = 'No se encontro ubigeo para la ubicacion seleccionada.';
+      this.ubicacionInfoMessage = null;
+      return false;
+    } finally {
+      this.isConsultandoUbigeo.set(false);
+    }
   }
 
   private handleRucLookupError(error: HttpErrorResponse): void {
@@ -211,6 +489,11 @@ export class ClienteFormDialogComponent implements OnDestroy {
     this.rucAptoMensaje = null;
   }
 
+  private clearUbigeoMessages(): void {
+    this.ubicacionInfoMessage = null;
+    this.ubicacionErrorMessage = null;
+  }
+
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
@@ -220,11 +503,17 @@ export class ClienteFormDialogComponent implements OnDestroy {
     return this.data.mode === 'create' ? 'Nuevo cliente' : 'Actualizar cliente';
   }
 
-  submit(): void {
+  async submit(): Promise<void> {
     this.form.markAllAsTouched();
-    if (this.form.invalid || !this.canSubmit) {
+    if (!this.canSubmit) {
       return;
     }
+
+    const hasUbigeo = await this.ensureUbigeoBeforeSubmit();
+    if (!hasUbigeo || this.form.invalid) {
+      return;
+    }
+
     const value = this.form.getRawValue();
     const idVendedorAsignado = this.permissions.isSeller()
       ? this.permissions.currentUserId() ?? value.idVendedorAsignado
@@ -250,6 +539,29 @@ export class ClienteFormDialogComponent implements OnDestroy {
     this.dialogRef.close();
   }
 
+  private async ensureUbigeoBeforeSubmit(): Promise<boolean> {
+    const departamento = this.form.controls.departamento.value;
+    const provincia = this.form.controls.provincia.value;
+    const distrito = this.form.controls.distrito.value;
+    const ubigeo = this.form.controls.ubigeo.value;
+
+    if (!departamento || !provincia || !distrito) {
+      this.ubicacionErrorMessage = 'Seleccione departamento, provincia y distrito.';
+      return false;
+    }
+
+    if (/^\d{6}$/.test(ubigeo)) {
+      return true;
+    }
+
+    const found = await this.consultarUbigeoAsync(departamento, provincia, distrito);
+    if (!found) {
+      this.ubicacionErrorMessage =
+        'No se puede guardar el cliente porque no se pudo determinar el ubigeo. Seleccione nuevamente departamento, provincia y distrito.';
+    }
+    return found;
+  }
+
   private loadCatalogos(): void {
     this.isLoadingCatalogos.set(true);
     this.catalogoError.set(null);
@@ -269,10 +581,10 @@ export class ClienteFormDialogComponent implements OnDestroy {
           return of([] as CatalogoItem[]);
         }),
       ),
-      vendedores: (this.permissions.isSeller() ? of(this.currentUserAsVendedor()) : this.domainApi.getUsuarios()).pipe(
+      vendedores: (this.permissions.isSeller() ? of(this.currentUserAsVendedor()) : this.domainApi.getVendedores()).pipe(
         catchError(() => {
           this.vendedoresError.set('No se pudieron cargar los vendedores disponibles.');
-          return of([] as UsuarioResponse[]);
+          return of([] as VendedorResponse[]);
         }),
       ),
     })
@@ -293,7 +605,7 @@ export class ClienteFormDialogComponent implements OnDestroy {
   private applyDefaultCatalogValues(
     tiposCliente: CatalogoItem[],
     estadosClienteContacto: CatalogoItem[],
-    vendedores: UsuarioResponse[],
+    vendedores: VendedorResponse[],
   ): void {
     if (!tiposCliente.length) {
       this.catalogoError.set('No existen tipos de cliente activos configurados.');
@@ -319,51 +631,107 @@ export class ClienteFormDialogComponent implements OnDestroy {
     }
   }
 
-  private filterVendedores(usuarios: UsuarioResponse[]): UsuarioResponse[] {
+  private filterVendedores(usuarios: VendedorResponse[]): VendedorResponse[] {
     if (this.permissions.isSeller()) {
       return usuarios.filter((usuario) => usuario.idUsuario === this.permissions.currentUserId());
     }
     const cleaned = usuarios.filter((usuario) => !!(usuario.nombres ?? '').trim());
-
-    // Regla principal (según tu BD): perfil=4 (Vendedor) y estado=1 (Habilitado).
-    const porId = cleaned.filter(
-      (usuario) => usuario.perfil?.id === this.vendedorPerfilId && usuario.estado?.id === this.usuarioHabilitadoEstadoId,
-    );
-    if (porId.length) {
-      this.vendedoresError.set(null);
-      return porId;
-    }
-
-    // Respaldo por nombre, por si cambian IDs o catálogos.
-    const porNombre = cleaned.filter((usuario) => {
-      const perfil = (usuario.perfil?.nombre ?? '').trim().toLowerCase();
-      const estado = (usuario.estado?.nombre ?? '').trim().toLowerCase();
-      const isVendedor = perfil.includes('vendedor');
-      const isHabilitado = estado.includes('habilitado') || estado.includes('activo');
-      return isVendedor && isHabilitado;
-    });
-    if (porNombre.length) {
-      this.vendedoresError.set(null);
-      return porNombre;
-    }
-
-    // Último fallback: al menos mostrar usuarios con perfil vendedor aunque estado no venga mapeado como esperamos.
-    const soloPerfil = cleaned.filter((usuario) => usuario.perfil?.id === this.vendedorPerfilId);
-    if (soloPerfil.length) {
-      this.vendedoresError.set('No se pudo filtrar por estado habilitado. Mostrando vendedores por perfil.');
-      return soloPerfil;
-    }
-
-    this.vendedoresError.set('No existen vendedores habilitados para asignar al cliente.');
-    return [];
+    this.vendedoresError.set(cleaned.length ? null : 'No existen vendedores habilitados para asignar al cliente.');
+    return cleaned;
   }
 
   private findEstadoActivo(estadosClienteContacto: CatalogoItem[]): CatalogoItem | undefined {
     return estadosClienteContacto.find((item) => item.descripcion.trim().toLowerCase() === 'activo');
   }
 
-  private currentUserAsVendedor(): UsuarioResponse[] {
+  private currentUserAsVendedor(): VendedorResponse[] {
     const user = this.auth.currentUser();
-    return user ? [user] : [];
+    return user
+      ? [
+          {
+            idUsuario: user.idUsuario,
+            nombres: user.nombres,
+            apellidoPaterno: user.apellidoPaterno,
+            apellidoMaterno: user.apellidoMaterno,
+            nombreCompleto: [user.nombres, user.apellidoPaterno, user.apellidoMaterno].filter(Boolean).join(' '),
+            correo: user.correo,
+          },
+        ]
+      : [];
+  }
+
+  private patchClienteValues(cliente: ClienteResponseVm): void {
+    this.isSyncingUbigeo = true;
+    this.form.patchValue(
+      {
+        ruc: cliente.ruc,
+        razonSocial: cliente.razonSocial,
+        idTipoCliente: cliente.idTipoCliente ?? 0,
+        idVendedorAsignado: cliente.idVendedorAsignado ?? 0,
+        direccionFiscal: cliente.direccionFiscal ?? '',
+        departamento: this.normalizeLocationText(cliente.departamento),
+        provincia: this.normalizeLocationText(cliente.provincia),
+        distrito: this.normalizeLocationText(cliente.distrito),
+        condicionSunat: cliente.condicionSunat ?? 'HABIDO',
+        estadoSunat: cliente.estadoSunat ?? 'ACTIVO',
+        ubigeo: this.normalizeUbigeoValue(cliente.ubigeo),
+        idEstadoClienteContacto: cliente.estado?.id ?? 0,
+      },
+      { emitEvent: false },
+    );
+    this.isSyncingUbigeo = false;
+  }
+
+  private pickCatalogValue(
+    options: string[],
+    rawValue: string | null | undefined,
+    updateOptions: (items: string[]) => void,
+  ): string {
+    const normalized = this.normalizeLocationText(rawValue);
+    if (!normalized) {
+      return '';
+    }
+
+    const match = options.find((option) => this.normalizeLocationText(option) === normalized);
+    if (match) {
+      return match;
+    }
+
+    updateOptions([...options, normalized]);
+    this.ubicacionErrorMessage =
+      'No se encontro coincidencia exacta en el catalogo de ubigeo. Verifique departamento, provincia y distrito.';
+    return normalized;
+  }
+
+  private ensureCatalogOption(
+    options: string[],
+    rawValue: string | null | undefined,
+    updateOptions: (items: string[]) => void,
+  ): string {
+    const normalized = this.normalizeLocationText(rawValue);
+    if (!normalized) {
+      return '';
+    }
+
+    const match = options.find((option) => this.normalizeLocationText(option) === normalized);
+    if (match) {
+      return match;
+    }
+
+    updateOptions([...options, normalized]);
+    return normalized;
+  }
+
+  private normalizeCatalogValues(values: string[]): string[] {
+    return Array.from(new Set(values.map((value) => this.normalizeLocationText(value)).filter(Boolean)));
+  }
+
+  private normalizeLocationText(value: string | null | undefined): string {
+    return (value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+  }
+
+  private normalizeUbigeoValue(value: string | null | undefined): string {
+    const normalized = (value ?? '').trim();
+    return /^\d{6}$/.test(normalized) ? normalized : '';
   }
 }

@@ -2,6 +2,7 @@ package com.example.demo.service;
 
 import com.example.demo.dto.UsuarioRequest;
 import com.example.demo.dto.UsuarioResponse;
+import com.example.demo.dto.VendedorResponse;
 import com.example.demo.exception.BusinessValidationException;
 import com.example.demo.exception.ResourceNotFoundException;
 import com.example.demo.mapper.UsuarioMapper;
@@ -63,6 +64,13 @@ public class UsuarioService extends CrudService<Usuario, Integer> {
     @Transactional(readOnly = true)
     public UsuarioResponse findDtoById(Integer id) {
         return mapper.toResponse(findUsuario(id));
+    }
+
+    @Transactional(readOnly = true)
+    public List<VendedorResponse> findVendedoresHabilitados() {
+        return usuarioRepository.findVendedoresHabilitados().stream()
+                .map(this::toVendedorResponse)
+                .toList();
     }
 
     @Transactional
@@ -156,6 +164,29 @@ public class UsuarioService extends CrudService<Usuario, Integer> {
     private Usuario findUsuario(Integer id) {
         return usuarioRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Usuario", id));
+    }
+
+    private VendedorResponse toVendedorResponse(Usuario usuario) {
+        return new VendedorResponse(
+                usuario.idUsuario,
+                usuario.nombres,
+                usuario.apellidoPaterno,
+                usuario.apellidoMaterno,
+                fullName(usuario),
+                usuario.correo
+        );
+    }
+
+    private String fullName(Usuario usuario) {
+        return String.join(" ",
+                safe(usuario.nombres),
+                safe(usuario.apellidoPaterno),
+                safe(usuario.apellidoMaterno)
+        ).trim();
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 
     private Perfil findPerfil(Integer id) {

@@ -3,7 +3,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { catchError, forkJoin, of } from 'rxjs';
-import { UsuarioResponse } from '../../core/auth/models/auth.models';
+import { VendedorResponse } from '../../core/auth/models/auth.models';
 import { PermissionService } from '../../core/auth/services/permission.service';
 import { ClienteResponse, ProductoResponse } from '../../core/models/domain.models';
 import { CatalogoItem } from '../../core/models/v1.models';
@@ -22,7 +22,7 @@ interface ReporteCatalogos {
   tiposCliente: CatalogoItem[];
   clientes: ClienteResponse[];
   productos: ProductoResponse[];
-  vendedores: UsuarioResponse[];
+  vendedores: VendedorResponse[];
 }
 
 const REPORTES: ReporteTipo[] = [
@@ -202,8 +202,8 @@ export class ReportesComponent {
     });
   }
 
-  nombreUsuario(usuario: UsuarioResponse): string {
-    return [usuario.nombres, usuario.apellidoPaterno, usuario.apellidoMaterno].filter(Boolean).join(' ');
+  nombreUsuario(usuario: VendedorResponse): string {
+    return usuario.nombreCompleto || [usuario.nombres, usuario.apellidoPaterno, usuario.apellidoMaterno].filter(Boolean).join(' ');
   }
 
   private loadCatalogos(): void {
@@ -214,7 +214,7 @@ export class ReportesComponent {
       clientes: this.domainApi.getClientes().pipe(catchError(() => of([]))),
       productos: this.domainApi.getProductos().pipe(catchError(() => of([]))),
       vendedores: this.permissions.canViewAllSellers()
-        ? this.domainApi.getUsuarios().pipe(catchError(() => of([])))
+        ? this.domainApi.getVendedores().pipe(catchError(() => of([])))
         : of([]),
     }).subscribe((catalogos) => this.catalogos.set(catalogos));
   }
