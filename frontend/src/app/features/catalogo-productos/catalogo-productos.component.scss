@@ -140,6 +140,14 @@ td {
   font-weight: 900;
 }
 
+.stock-chip mat-icon {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.25rem;
+  font-size: 1rem;
+  line-height: 1rem;
+}
+
 .state-chip.active,
 .stock-chip {
   background: rgba(0, 110, 37, 0.15);
@@ -162,8 +170,18 @@ td {
 }
 
 .stock-chip.warn {
-  background: rgba(250, 173, 20, 0.22);
-  color: #8a5a00;
+  --mat-chip-elevated-container-color: #f8d7da;
+  --mat-chip-label-text-color: #842029;
+  --mat-chip-with-icon-icon-color: #842029;
+  --mat-chip-hover-state-layer-color: #842029;
+
+  border: 1px solid #e89a9f;
+  background-color: #f8d7da;
+  color: #842029;
+}
+
+.stock-chip.warn mat-icon {
+  color: #842029;
 }
 
 .stock-chip.critical {

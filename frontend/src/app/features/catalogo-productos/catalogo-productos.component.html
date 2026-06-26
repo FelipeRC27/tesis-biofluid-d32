@@ -130,6 +130,9 @@
               <strong>Disponible {{ item.stockDisponible }}</strong>
               <span>Fisico {{ item.stockFisico }} · Reservado {{ item.stockReservado }}</span>
               <mat-chip class="stock-chip" [class.warn]="getStockBadge(item) === 'warn'" [class.critical]="getStockBadge(item) === 'critical'">
+                @if (getStockBadge(item) === 'warn') {
+                  <mat-icon aria-hidden="true">warning</mat-icon>
+                }
                 {{ getStockLabel(item) }}
               </mat-chip>
             </div>
@@ -200,6 +203,9 @@
 
           <div class="card-status-row">
             <mat-chip class="stock-chip" [class.warn]="getStockBadge(item) === 'warn'" [class.critical]="getStockBadge(item) === 'critical'">
+              @if (getStockBadge(item) === 'warn') {
+                <mat-icon aria-hidden="true">warning</mat-icon>
+              }
               {{ item.stockDisponible }} · {{ getStockLabel(item) }}
             </mat-chip>
             <mat-chip
